@@ -20,6 +20,9 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  jackson:
+    serialization:
+      write-dates-with-context-time-zone: false
 
 springdoc:
   api-docs:

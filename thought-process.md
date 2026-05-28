@@ -21,7 +21,8 @@
 * **Pessimistic vs Optimistic**: I deliberately chose **Pessimistic Locking** (`FOR UPDATE`) over Optimistic Locking because it gives a much better user experience when a highly popular class drops.
 * **The UX Problem with Optimistic**: If 50 parents try to grab the last 2 spots at once, optimistic locking lets everyone click through, fills out their info, and hits buy. Then, 48 parents get a frustrating error message at the very last second telling them their transaction failed. They have to refresh, retry, and fill everything out again, only to find the class is full.
 * **The UX Fix with Pessimistic**: Pessimistic locking creates an orderly line the second checkout starts. The first two parents get the spots. The other 48 requests wait for a split second, immediately see the class is full, and get a clear "Class is Full" message right away. Nobody wastes time filling out forms for a spot that is already gone.
-* **Timezone Strategy**: Zero local times are saved in the DB. Everything stays strict UTC internally. Timezone shifting happens **only at the API boundary** when reading the user's profile string to format the incoming request or outgoing response.
+* **Timezone Strategy**: Zero local times are saved in the DB. Everything stays strict UTC internally. Timezone shifting happens **only at the API boundary** when mapping UTC `Instant` to localized `ZonedDateTime` in response DTOs.
+  * *Jackson Fix*: By default, Spring Boot's Jackson normalizes all `ZonedDateTime` responses back to UTC. I disabled this (`write-dates-with-context-time-zone: false` in `application.yaml`) so the parent actually sees the timezone offset (like `+05:30`) on their screen.
 
 ---
 
@@ -45,7 +46,7 @@ WHERE parent_id = :parentId
 
 ## Clean Code & Clean APIs
 
-* **Swagger Clutter**: Writing Swagger/OpenAPI docs inside the controller class makes the code incredibly messy and hard to read. To fix this, I separated all API documentation annotations into parent Java interfaces (e.g., `TeacherApi`). The actual REST controllers just implement these interfaces, keeping the execution code 100% clean and readable.
+* **Swagger Clutter & Package Separation**: OpenAPI/Swagger docs make controller classes super messy and hard to read. To fix this, I put all Swagger and Spring MVC mapping annotations inside separate Java interfaces (like `TeacherApi`) in their own package (`com.undoschool.booking.api`). The actual controllers (in `com.undoschool.booking.controller`) just implement those interfaces. This keeps the controllers 100% clean and keeps the packages neatly organized.
 * **Concrete Service Classes**: I chose not to use redundant interfaces (like `BookingService` -> `BookingServiceImpl`) for my service layer. Since there is only ever one implementation for these services, modern Spring Boot (using CGLIB class-based proxying) handles them perfectly without interfaces. This keeps the codebase lean and avoids the friction of updating two files for every signature change.
 * **Manual Static Mappers**: I built simple, manual mapper utility classes with static methods (e.g., `CourseMapper`) to handle entity-to-DTO conversions. This isolates data translation from business logic, compiles instantly, and avoids adding compiler-level libraries like MapStruct or reflection-heavy runtimes like ModelMapper.
 * **Zero DTO Boilerplate**: I used native Java 21 `record` classes for all request and response DTOs. They are immutable, thread-safe, and get rid of Lombok getter/setter clutter entirely.
