@@ -15,6 +15,6 @@ import java.util.UUID;
 public interface SessionRepository extends JpaRepository<Session, UUID> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT s FROM Session s WHERE s.offering.id = :offeringId")
+    @Query("SELECT s FROM Session s WHERE s.offering.id = :offeringId ORDER BY s.startTime, s.id")
     List<Session> findByOfferingIdForUpdate(@Param("offeringId") UUID offeringId);
 }
