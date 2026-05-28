@@ -41,3 +41,26 @@ WHERE parent_id = :parentId
 * **Double Clicks**: I put a unique constraint on `BOOKING(parent_id, offering_id)`. This stops a parent from accidentally buying the exact same class twice if they spam the submit button.
 * **Scope**: I only checked for parent schedule conflicts and class capacity limits here. Checking if a teacher is double-booked across different classes is left out to keep the project clean and focused.
 
+---
+
+## Clean Code & Clean APIs
+
+* **Swagger Clutter**: Writing Swagger/OpenAPI docs inside the controller class makes the code incredibly messy and hard to read. To fix this, I separated all API documentation annotations into parent Java interfaces (e.g., `TeacherApi`). The actual REST controllers just implement these interfaces, keeping the execution code 100% clean and readable.
+* **Concrete Service Classes**: I chose not to use redundant interfaces (like `BookingService` -> `BookingServiceImpl`) for my service layer. Since there is only ever one implementation for these services, modern Spring Boot (using CGLIB class-based proxying) handles them perfectly without interfaces. This keeps the codebase lean and avoids the friction of updating two files for every signature change.
+* **Manual Static Mappers**: I built simple, manual mapper utility classes with static methods (e.g., `CourseMapper`) to handle entity-to-DTO conversions. This isolates data translation from business logic, compiles instantly, and avoids adding compiler-level libraries like MapStruct or reflection-heavy runtimes like ModelMapper.
+* **Zero DTO Boilerplate**: I used native Java 21 `record` classes for all request and response DTOs. They are immutable, thread-safe, and get rid of Lombok getter/setter clutter entirely.
+* **Standard RFC Errors**: Instead of writing a custom wrapper class for error responses, I went with Spring Boot 3's native `ProblemDetail` (RFC 7807) inside the global exception handler. It formats all validation and business errors in a standard web format out of the box.
+
+---
+
+## ID Generation
+
+I chose **service-layer UUID generation** (`UUID.randomUUID()` in mappers/services) as the primary approach.
+
+Why this is better for this project:
+* The app knows the booking ID immediately, so it can create `booking_session_lock` rows in the same flow without waiting on DB-generated IDs.
+* It keeps the booking transaction simple and predictable under concurrency.
+* It matches the service-first design we already use.
+
+I also added a **database fallback** (`DEFAULT gen_random_uuid()`) so manual SQL inserts are safe too.
+For race-safety, the database also enforces `UNIQUE(parent_id, session_id)` in `booking_session_lock` to prevent duplicate lock rows under concurrency.
