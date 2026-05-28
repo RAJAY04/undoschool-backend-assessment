@@ -16,7 +16,7 @@ import java.util.UUID;
 public class BookingSessionLock {
 
     @Id
-    @Column(name = "id", nullable = false)
+    @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
