@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -26,5 +27,13 @@ public class ParentService {
         Parent parent = ParentMapper.toEntity(UUID.randomUUID(), request);
         Parent saved = parentRepository.save(parent);
         return ParentMapper.toResponse(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ParentResponse> getAllParents() {
+        return parentRepository.findAll()
+                .stream()
+                .map(ParentMapper::toResponse)
+                .toList();
     }
 }
