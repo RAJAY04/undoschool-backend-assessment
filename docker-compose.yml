@@ -1,0 +1,15 @@
+services:
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: undoschool-postgres
+    ports:
+      - "5433:5432" # Safe isolated port mapping
+    environment:
+      POSTGRES_DB: undoschool_booking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - undoschool_pgdata:/var/lib/postgresql/data
+
+volumes:
+  undoschool_pgdata:
