@@ -18,7 +18,7 @@ import java.util.UUID;
 public class Course {
 
     @Id
-    @Column(name = "id", nullable = false)
+    @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
     @Column(name = "title", nullable = false)
