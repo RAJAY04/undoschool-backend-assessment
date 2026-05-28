@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -26,5 +27,13 @@ public class TeacherService {
         Teacher teacher = TeacherMapper.toEntity(UUID.randomUUID(), request);
         Teacher saved = teacherRepository.save(teacher);
         return TeacherMapper.toResponse(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TeacherResponse> getAllTeachers() {
+        return teacherRepository.findAll()
+                .stream()
+                .map(TeacherMapper::toResponse)
+                .toList();
     }
 }

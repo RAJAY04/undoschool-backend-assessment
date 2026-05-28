@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -22,5 +23,13 @@ public class CourseService {
         Course course = CourseMapper.toEntity(UUID.randomUUID(), request);
         Course saved = courseRepository.save(course);
         return CourseMapper.toResponse(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CourseResponse> getAllCourses() {
+        return courseRepository.findAll()
+                .stream()
+                .map(CourseMapper::toResponse)
+                .toList();
     }
 }
