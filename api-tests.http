@@ -1,201 +1,323 @@
+# ==============================================================================
+# Global Class Offering Booking System — End-to-End Demo Script
+# ==============================================================================
+# This single .http file contains the complete step-by-step walkthrough for 
+# recording the project submission video. 
+#
+# Execution Instructions:
+# 1. Ensure your Spring Boot backend is running locally at http://localhost:8080
+# 2. Open this file in VS Code with the "REST Client" extension installed.
+# 3. Click "Send Request" sequentially from Step 0 to Step 15.
+# ==============================================================================
+
 # Base Variables Section
-# Defines the API target host, common content headers, and target execution date
+# Local Development:
 @baseUrl = http://localhost:8080
+# Deployed Render Instance:
+# @baseUrl = https://booking-service-latest-400c.onrender.com
 @contentType = application/json
 @targetDate = 2026-06-15
 
 ###
 
-# Step 0: Create Course Template
-# Before creating an offering/cohort, we must establish a Course template.
-# This registers the template title and description in the database.
+# ==============================================================================
+# PHASE 1: SETUP & PROFILE REGISTRATION
+# ==============================================================================
+
+# Step 0: Create Course Template A (Python Coding)
+# Registers the basic class template in the database.
 # @name createCourse
 POST {{baseUrl}}/api/courses
 Content-Type: {{contentType}}
 
 {
-  "title": "Intro to Computer Science",
-  "description": "Learn basic programming and logic concepts"
+  "title": "Python Coding for Beginners",
+  "description": "Introduction to programming concepts using Python"
 }
-
-# Dynamic extraction of the Course ID (Must stay inside Step 0's boundaries)
-@courseId = {{createCourse.response.body.id}}
 
 ###
 
 # Step 1: Create Teacher Profile
-# Registers a new teacher with their own name, email, and localized timezone.
-# We use the REST Client's dynamic $uuid variable to guarantee uniqueness on re-runs.
+# Registers a teacher. Note their registered timezone: Asia/Kolkata (IST).
+# We use {{$guid}} to generate a unique email address on every run.
 # @name createTeacher
 POST {{baseUrl}}/api/teachers
 Content-Type: {{contentType}}
 
 {
   "name": "Jane Doe",
-  "email": "jane.doe.{{$uuid}}@undoschool.com",
+  "email": "jane.doe.{{$guid}}@undoschool.com",
   "timezone": "Asia/Kolkata"
 }
 
-# Dynamic extraction of the Teacher ID (Must stay inside Step 1's boundaries)
-@teacherId = {{createTeacher.response.body.id}}
-
 ###
 
-# Step 2: Create Offering Cohort
-# Creates a live cohort that maps the Course template to the registered Teacher.
+# Step 2: Create Offering A
+# Creates a live class section mapping Course A to Teacher Jane Doe.
 # @name createOffering
-POST {{baseUrl}}/api/teachers/{{teacherId}}/offerings
+POST {{baseUrl}}/api/teachers/{{createTeacher.response.body.id}}/offerings
 Content-Type: {{contentType}}
 
 {
-  "courseId": "{{courseId}}",
-  "title": "CS101 - Summer 2026 Batch",
-  "maxStudents": 25
+  "courseId": "{{createCourse.response.body.id}}",
+  "title": "Saturday Morning Batch",
+  "maxStudents": 2
 }
-
-# Dynamic extraction of the Offering ID (We map to offeringId to match the serialized JSON response key)
-@offeringId = {{createOffering.response.body.offeringId}}
 
 ###
 
-# Step 3: Edge Case Fail Path - Time Inversion
-# Business Rule: Every session must have a chronological bounds invariant (endTime > startTime).
-# Expected response: 400 Bad Request with ProblemDetail error.
+# ==============================================================================
+# PHASE 2: TEACHER SESSION VALIDATION (CHRONOLOGICAL & OVERLAP GUARDS)
+# ==============================================================================
+
+# Step 3: Session Validation Guard - Time Inversion
+# Business Rule: Every session must have endTime > startTime.
+# Expected Response: 400 Bad Request with ProblemDetail error.
 # @name addSessionInverted
-POST {{baseUrl}}/api/offerings/{{offeringId}}/sessions
+POST {{baseUrl}}/api/offerings/{{createOffering.response.body.offeringId}}/sessions
 Content-Type: {{contentType}}
 
 {
   "sessions": [
     {
-      "startTime": "{{targetDate}}T11:00:00Z",
-      "endTime": "{{targetDate}}T10:00:00Z"
+      "startTime": "{{targetDate}}T13:00:00Z",
+      "endTime": "{{targetDate}}T12:00:00Z"
     }
   ]
 }
 
 ###
 
-# Step 4: Algorithmic Fail Path - Session Overlap
-# Business Rule: Sessions within a single offering payload must not overlap.
-# In this request, Session 1 (10:00 - 11:15) intersects with Session 2 (11:00 - 12:00) by 15 minutes.
-# Expected response: 400 Bad Request with ProblemDetail error.
+# Step 4: Session Validation Guard - Self-Overlap
+# Business Rule: Sessions inside the same payload must not overlap.
+# Session 1 (12:00-13:15) and Session 2 (13:00-14:00) overlap by 15 mins.
+# Expected Response: 400 Bad Request with ProblemDetail error.
 # @name addSessionsOverlap
-POST {{baseUrl}}/api/offerings/{{offeringId}}/sessions
+POST {{baseUrl}}/api/offerings/{{createOffering.response.body.offeringId}}/sessions
 Content-Type: {{contentType}}
 
 {
   "sessions": [
     {
-      "startTime": "{{targetDate}}T10:00:00Z",
-      "endTime": "{{targetDate}}T11:15:00Z"
+      "startTime": "{{targetDate}}T12:00:00Z",
+      "endTime": "{{targetDate}}T13:15:00Z"
     },
     {
-      "startTime": "{{targetDate}}T11:00:00Z",
-      "endTime": "{{targetDate}}T12:00:00Z"
+      "startTime": "{{targetDate}}T13:00:00Z",
+      "endTime": "{{targetDate}}T14:00:00Z"
     }
   ]
 }
 
 ###
 
-# Step 5: Idempotent Teacher Session Addition - First Attempt
-# Business Rule: Sessions must be chronological and clean.
-# In this request, Session 1 (10:00 - 11:00) and Session 2 (11:00 - 12:00) are back-to-back, which is valid.
-# Expected response: 200 OK.
+# Step 5: Add Valid Sessions to Offering A (First Attempt)
+# Adds two back-to-back sessions: 12:00 to 13:00 UTC and 13:00 to 14:00 UTC.
+# Expected Response: 200 OK.
 # @name addSessionsHappy
-POST {{baseUrl}}/api/offerings/{{offeringId}}/sessions
+POST {{baseUrl}}/api/offerings/{{createOffering.response.body.offeringId}}/sessions
 Content-Type: {{contentType}}
-Idempotency-Key: sessions-key-{{offeringId}}
+Idempotency-Key: sessions-key-{{createOffering.response.body.offeringId}}
 
 {
   "sessions": [
     {
-      "startTime": "{{targetDate}}T10:00:00Z",
-      "endTime": "{{targetDate}}T11:00:00Z"
+      "startTime": "{{targetDate}}T12:00:00Z",
+      "endTime": "{{targetDate}}T13:00:00Z"
     },
     {
-      "startTime": "{{targetDate}}T11:00:00Z",
-      "endTime": "{{targetDate}}T12:00:00Z"
+      "startTime": "{{targetDate}}T13:00:00Z",
+      "endTime": "{{targetDate}}T14:00:00Z"
     }
   ]
 }
 
 ###
 
-# Step 6: Idempotent Teacher Session Addition - Second Attempt (Retry with same Key)
-# We repeat the exact same session addition request with the same Idempotency-Key.
-# Expected response: 200 OK with header 'X-Cache-Idempotency: true'.
+# Step 6: Session Addition Idempotency Check (Retry)
+# Retries the session payload using the exact same Idempotency-Key.
+# Expected Response: 200 OK containing "X-Cache-Idempotency: true" header.
 # @name addSessionsRetry
-POST {{baseUrl}}/api/offerings/{{offeringId}}/sessions
+POST {{baseUrl}}/api/offerings/{{createOffering.response.body.offeringId}}/sessions
 Content-Type: {{contentType}}
-Idempotency-Key: sessions-key-{{offeringId}}
+Idempotency-Key: sessions-key-{{createOffering.response.body.offeringId}}
 
 {
   "sessions": [
     {
-      "startTime": "{{targetDate}}T10:00:00Z",
-      "endTime": "{{targetDate}}T11:00:00Z"
+      "startTime": "{{targetDate}}T12:00:00Z",
+      "endTime": "{{targetDate}}T13:00:00Z"
     },
     {
-      "startTime": "{{targetDate}}T11:00:00Z",
-      "endTime": "{{targetDate}}T12:00:00Z"
+      "startTime": "{{targetDate}}T13:00:00Z",
+      "endTime": "{{targetDate}}T14:00:00Z"
     }
   ]
 }
 
 ###
 
-# Step 7: Timezone Shifting Projection
-# Business Rule: The backend stores sessions in strict UTC internally, but projects them 
-# shifted dynamically into the parent/client request's target timezone at the API boundary.
-# Expected response: 200 OK. The output sessions must display in Eastern Daylight Time (EDT) offset (-04:00).
-# @name getAvailableOfferingsTimezoneShift
+# ==============================================================================
+# PHASE 3: TIMEZONE CONVERSION DEMONSTRATION
+# ==============================================================================
+
+# Step 7a: View Available Offerings (UTC View)
+# No timezone parameters provided; sessions display in raw UTC.
+# Expected Response:
+#   "startTime": "2026-06-15T12:00:00Z"
+#   "formattedStartTime": "2026-06-15 12:00 PM (UTC)"
+# @name getOfferingsUTC
+GET {{baseUrl}}/api/parents/offerings
+Accept: {{contentType}}
+
+###
+
+# Step 7b: View Available Offerings (New York - Eastern Daylight Time: UTC-4)
+# Expected Response:
+#   "startTime": "2026-06-15T08:00:00-04:00"
+#   "formattedStartTime": "2026-06-15 08:00 AM (EDT)"
+# @name getOfferingsEDT
 GET {{baseUrl}}/api/parents/offerings?timezone=America/New_York
 Accept: {{contentType}}
 
 ###
 
-# Step 8: Create Parent Profile (Prerequisite for Bookings)
-# Registers a parent with a name, email, and timezone.
+# Step 7c: View Available Offerings (Kolkata - Indian Standard Time: UTC+5:30)
+# Expected Response:
+#   "startTime": "2026-06-15T17:30:00+05:30"
+#   "formattedStartTime": "2026-06-15 05:30 PM (IST)"
+# @name getOfferingsIST
+GET {{baseUrl}}/api/parents/offerings?timezone=Asia/Kolkata
+Accept: {{contentType}}
+
+###
+
+# Step 7d: View Teacher's Own Upcoming Offerings
+# The system automatically projects the sessions in the teacher's registered timezone (Asia/Kolkata).
+# Expected Response:
+#   "startTime": "2026-06-15T17:30:00+05:30"
+#   "formattedStartTime": "2026-06-15 05:30 PM (IST)"
+# @name getTeacherOfferings
+GET {{baseUrl}}/api/teachers/{{createTeacher.response.body.id}}/offerings
+Accept: {{contentType}}
+
+###
+
+# ==============================================================================
+# PHASE 4: PARENT REGISTRATION & BOOKING FLOW
+# ==============================================================================
+
+# Step 8: Create Parent Profile
+# Registers a parent. Note their registered timezone: America/New_York (EDT, UTC-4).
+# We use {{$guid}} to generate a unique email address on every run.
 # @name createParent
 POST {{baseUrl}}/api/parents
 Content-Type: {{contentType}}
 
 {
   "name": "John Parent",
-  "email": "john.parent.{{$uuid}}@undoschool.com",
+  "email": "john.parent.{{$guid}}@undoschool.com",
   "timezone": "America/New_York"
 }
 
 ###
 
-# Dynamic extraction of the Parent ID from Step 8's response
-@parentId = {{createParent.response.body.id}}
-
-# Step 9: Idempotent Booking - First Attempt
-# Send a booking request with a custom Idempotency-Key.
-# Expected response: 201 Created with booking details.
+# Step 9: Book Offering A (First Attempt)
+# Books the entire batch (all sessions) for John Parent.
+# Expected Response: 201 Created. Session times will automatically display in the 
+# parent's timezone (EDT, -04:00).
 # @name bookOfferingFirst
-POST {{baseUrl}}/api/parents/{{parentId}}/bookings
+POST {{baseUrl}}/api/parents/{{createParent.response.body.id}}/bookings
 Content-Type: {{contentType}}
-Idempotency-Key: booking-key-{{parentId}}
+Idempotency-Key: booking-key-{{createParent.response.body.id}}
 
 {
-  "offeringId": "{{offeringId}}"
+  "offeringId": "{{createOffering.response.body.offeringId}}"
 }
 
 ###
 
-# Step 10: Idempotent Booking - Second Attempt (Retry with same Key)
-# We repeat the exact same booking request with the same Idempotency-Key.
-# Expected response: 201 Created with header 'X-Cache-Idempotency: true'.
-# Without idempotency, this would throw a 409 Schedule Conflict exception.
+# Step 10: Booking Idempotency Check (Retry)
+# Retries the booking request using the exact same Idempotency-Key.
+# Expected Response: 201 Created containing "X-Cache-Idempotency: true" header, 
+# preventing double bookings and capacity overruns.
 # @name bookOfferingSecond
-POST {{baseUrl}}/api/parents/{{parentId}}/bookings
+POST {{baseUrl}}/api/parents/{{createParent.response.body.id}}/bookings
 Content-Type: {{contentType}}
-Idempotency-Key: booking-key-{{parentId}}
+Idempotency-Key: booking-key-{{createParent.response.body.id}}
 
 {
-  "offeringId": "{{offeringId}}"
+  "offeringId": "{{createOffering.response.body.offeringId}}"
 }
+
+###
+
+# ==============================================================================
+# PHASE 5: TIME CONFLICT LOCKING & CAPACITY SAFETY
+# ==============================================================================
+
+# Step 11: Create Course Template B (Art Drawing Class)
+# @name createCourseB
+POST {{baseUrl}}/api/courses
+Content-Type: {{contentType}}
+
+{
+  "title": "Creative Art & Drawing",
+  "description": "Learn perspective drawing and coloring techniques"
+}
+
+###
+
+# Step 12: Create Offering B
+# Creates a section for Course B.
+# @name createOfferingB
+POST {{baseUrl}}/api/teachers/{{createTeacher.response.body.id}}/offerings
+Content-Type: {{contentType}}
+
+{
+  "courseId": "{{createCourseB.response.body.id}}",
+  "title": "Monday Evening Sketching Batch",
+  "maxStudents": 15
+}
+
+###
+
+# Step 13: Add Overlapping Sessions to Offering B
+# Session starts at 12:30 UTC and ends at 13:30 UTC. 
+# This overlaps with Offering A's booked schedule (12:00 to 14:00 UTC).
+# @name addSessionsB
+POST {{baseUrl}}/api/offerings/{{createOfferingB.response.body.offeringId}}/sessions
+Content-Type: {{contentType}}
+Idempotency-Key: sessions-key-{{createOfferingB.response.body.offeringId}}
+
+{
+  "sessions": [
+    {
+      "startTime": "{{targetDate}}T12:30:00Z",
+      "endTime": "{{targetDate}}T13:30:00Z"
+    }
+  ]
+}
+
+###
+
+# Step 14: Attempt to Book Overlapping Offering B (Conflict Detection check)
+# Parent John is already booked for Offering A (12:00-14:00 UTC).
+# Attempting to book Offering B (12:30-13:30 UTC) should trigger the conflict guard.
+# Expected Response: 409 Conflict with schedule conflict details.
+# @name bookOfferingOverlappingConflict
+POST {{baseUrl}}/api/parents/{{createParent.response.body.id}}/bookings
+Content-Type: {{contentType}}
+Idempotency-Key: booking-key-conflict-{{createParent.response.body.id}}
+
+{
+  "offeringId": "{{createOfferingB.response.body.offeringId}}"
+}
+
+###
+
+# Step 15: View Parent's Booked Offerings
+# Shows the successful bookings, projected in the parent's local timezone (America/New_York).
+# @name getParentBookings
+GET {{baseUrl}}/api/parents/{{createParent.response.body.id}}/bookings
+Accept: {{contentType}}

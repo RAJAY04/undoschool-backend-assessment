@@ -1,5 +1,6 @@
 package com.undoschool.booking.controller;
 
+import com.undoschool.booking.annotation.Idempotent;
 import com.undoschool.booking.api.ParentApi;
 import com.undoschool.booking.dto.request.BookingRequest;
 import com.undoschool.booking.dto.request.CreateParentRequest;
@@ -52,6 +53,7 @@ public class ParentController implements ParentApi {
     }
 
     @Override
+    @Idempotent
     public ResponseEntity<BookingResponse> bookOffering(String idempotencyKey, UUID parentId, BookingRequest request) {
         BookingResponse response = bookingService.bookOffering(parentId, request);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
