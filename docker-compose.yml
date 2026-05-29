@@ -10,6 +10,24 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - undoschool_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d undoschool_booking"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  booking-service:
+    build: .
+    container_name: undoschool-booking-service
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/undoschool_booking
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      postgres-db:
+        condition: service_healthy
 
 volumes:
   undoschool_pgdata:
