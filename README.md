@@ -48,6 +48,21 @@ The easiest way to boot the database and the application together is via Docker 
 
 ---
 
+## 🔑 Environment Variables
+
+The application is configured via the following environment variables. When running through Docker Compose, these are set automatically. For standalone or production deployment, set them in your shell or hosting platform.
+
+| Variable | Description | Default (Docker Compose) |
+|---|---|---|
+| `SPRING_DATASOURCE_URL` | JDBC connection string for PostgreSQL | `jdbc:postgresql://postgres-db:5432/undoschool_booking` |
+| `SPRING_DATASOURCE_USERNAME` | Database username | `postgres` |
+| `SPRING_DATASOURCE_PASSWORD` | Database password | `postgres` |
+| `SERVER_PORT` | Port the application listens on | `8080` |
+
+> **Note**: Flyway migrations run automatically on startup — no additional database setup is needed beyond a running PostgreSQL instance.
+
+---
+
 ## 💾 Database Schema
 
 The system uses Flyway migrations to manage the schema state in PostgreSQL.
@@ -109,6 +124,13 @@ erDiagram
         timestamptz start_time
         timestamptz end_time
     }
+    IDEMPOTENT_REQUEST {
+        varchar key PK
+        varchar status
+        integer response_status
+        text response_body
+        timestamptz created_at
+    }
 ```
 
 ---
@@ -166,9 +188,9 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> PENDING : New key received
-    PENDING --> SUCCESS : Request succeeds\n(Cache response)
-    PENDING --> [*] : Request fails\n(Delete key)
-    SUCCESS --> SUCCESS : Key retried\n(Return cached response)
+    PENDING --> SUCCESS : Request succeeds (response cached)
+    PENDING --> [*] : Request fails (key deleted)
+    SUCCESS --> SUCCESS : Request retried (cached response returned)
 ```
 
 
@@ -264,4 +286,35 @@ To run the automated tests:
 mvn test
 ```
 
-For manual testing, check out [api-tests.http](file:///home/rap/Projects/booking-service/api-tests.http) which provides a sequence of API calls (including conflict and idempotency verification) that can be run directly using tools like the REST Client extension in VS Code.
+### 🔥 Concurrency & Load Testing (Terminal Demo)
+To verify that our pessimistic locking logic successfully prevents over-enrollment under concurrent load, we provide a load test script in the root directory:
+```bash
+./concurrency-test.sh
+```
+This script will:
+1. Spin up a temporary Course, Teacher, and an Offering with a capacity of **2**.
+2. Register **10 separate Parent profiles**.
+3. Fire **10 simultaneous background HTTP booking requests** (using `curl` and bash asynchronous processing) to book the last seats.
+4. Output status codes (exactly **2** requests will return `HTTP 201`, and **8** will return `HTTP 409 Conflict`).
+5. Verify the final database state to assert that the enrollment is exactly **2** and no double-bookings occurred.
+
+For manual testing, check out [api-tests.http](api-tests.http) which provides a sequence of API calls (including conflict and idempotency verification) that can be run directly using tools like the REST Client extension in VS Code.
+
+---
+
+## 📌 Assumptions
+
+1. **No Authentication/Authorization**: The API is open with no login, JWT, or role-based access control. Any caller can act as any teacher or parent by passing their ID.
+2. **One Parent = One Student**: There is no separate "child" or "student" entity. A parent profile directly represents the learner booking classes.
+3. **Course is a Static Template**: A `Course` (e.g., "Python Coding for Beginners") is just a reusable label. It holds no schedule, capacity, or teacher association — that is the job of an `Offering`.
+4. **Booking is All-or-Nothing**: When a parent books an offering, they are enrolled in **all** sessions of that offering. There is no partial or per-session booking.
+5. **Conflict Detection is Per-Parent**: Schedule overlap checks apply to a single parent's bookings. Two different parents can book offerings with overlapping times.
+6. **No Payment or Waitlist**: The system handles seat reservation only. There is no payment gateway integration or waitlist queue.
+7. **Idempotency Keys Expire After 24 Hours**: A background scheduler cleans up keys older than 24 hours. Retries after that window are treated as new requests.
+8. **PostgreSQL for Idempotency Store**: Idempotency tracking uses the main PostgreSQL database instead of Redis, keeping infrastructure simple and avoiding an extra dependency.
+
+---
+
+## 💭 Thought Process
+
+For a deeper look at the design trade-offs and reasoning accumulated while building this project, see [thought-process.md](thought-process.md). It covers decisions around read performance vs storage, pessimistic vs optimistic locking, timezone handling strategy, code structure choices, and more.
