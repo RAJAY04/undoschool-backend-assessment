@@ -48,7 +48,7 @@ public class TeacherController implements TeacherApi {
     }
 
     @Override
-    public ResponseEntity<OfferingResponse> addSessions(UUID offeringId, AddSessionsRequest request) {
+    public ResponseEntity<OfferingResponse> addSessions(String idempotencyKey, UUID offeringId, AddSessionsRequest request) {
         OfferingResponse response = offeringService.addSessions(offeringId, request);
         return ResponseEntity.ok(response);
     }

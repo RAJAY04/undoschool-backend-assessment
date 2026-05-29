@@ -1,5 +1,6 @@
 package com.undoschool.booking.api;
 
+import com.undoschool.booking.annotation.Idempotent;
 import com.undoschool.booking.dto.request.AddSessionsRequest;
 import com.undoschool.booking.dto.request.CreateOfferingRequest;
 import com.undoschool.booking.dto.request.CreateTeacherRequest;
@@ -131,12 +132,15 @@ public interface TeacherApi {
         description = "Offering not found",
         content = @Content(schema = @Schema(implementation = ProblemDetail.class))
     )
+    @Idempotent
     @PostMapping(
         value = "/api/offerings/{offeringId}/sessions",
         consumes = MediaType.APPLICATION_JSON_VALUE,
         produces = MediaType.APPLICATION_JSON_VALUE
     )
     ResponseEntity<OfferingResponse> addSessions(
+        @Parameter(description = "Optional client-generated key to ensure request idempotency", required = false)
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         @Parameter(description = "ID of the offering", required = true)
         @PathVariable("offeringId") UUID offeringId,
         @Valid @RequestBody AddSessionsRequest request

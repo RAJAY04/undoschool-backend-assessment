@@ -1,34 +1,9 @@
-## The Big Trade-Off
+# Backend Decisions & Trade-offs
 
-* **The Problem**: Checking if a parent is free usually means joining Bookings to Offerings, and then Offerings to Sessions. Doing that every time someone hits "Book" slows the database down to a crawl.
-* **The Fix**: I added a helper table called `BOOKING_SESSION_LOCK`. The second a booking goes through, we copy and flatten those session times directly under the parent's ID. It uses a bit more storage, but it makes conflict checks a lightning-fast single table lookup.
+## Read Performance vs Storage
 
----
+Checking if a parent is free by joining bookings, offerings, and sessions is way too slow under concurrent load. I traded a tiny bit of write storage to completely optimize read speeds. I built a flattened helper table called booking_session_lock. The second a booking transaction hits, the app copies and flattens those specific session times right under the parent_id. Now conflict checks are a lightning-fast single table lookup with a simple query:
 
-## What Each Table Does
-
-* `TEACHER` & `PARENT`: Basic user profiles. Both save a `timezone` string (like `Europe/London`). The Java backend uses this to shift UTC database times into their local time on the screen.
-* **`COURSE`**: Just the static template for a class (like "Math 101"). It has no concept of time, teachers, or schedules.
-* **`OFFERING`**: This is the live cohort connecting a course to a teacher. It manages the inventory using `max_students` and `current_enrollment`.
-* **`SESSION`**: The actual calendar dates and times for an offering. Stored strictly as `TIMESTAMPTZ` so Postgres forces everything into UTC internally.
-* **`BOOKING`**: The source of truth showing a parent successfully registered for an offering.
-* **`BOOKING_SESSION_LOCK`**: The calendar blockout table. It maps a parent directly to their busy time slots so we can see their availability instantly.
-
----
-
-## Concurrency & Timezones
-
-* **Pessimistic vs Optimistic**: I deliberately chose **Pessimistic Locking** (`FOR UPDATE`) over Optimistic Locking because it gives a much better user experience when a highly popular class drops.
-* **The UX Problem with Optimistic**: If 50 parents try to grab the last 2 spots at once, optimistic locking lets everyone click through, fills out their info, and hits buy. Then, 48 parents get a frustrating error message at the very last second telling them their transaction failed. They have to refresh, retry, and fill everything out again, only to find the class is full.
-* **The UX Fix with Pessimistic**: Pessimistic locking creates an orderly line the second checkout starts. The first two parents get the spots. The other 48 requests wait for a split second, immediately see the class is full, and get a clear "Class is Full" message right away. Nobody wastes time filling out forms for a spot that is already gone.
-* **Timezone Strategy**: Zero local times are saved in the DB. Everything stays strict UTC internally. Timezone shifting happens **only at the API boundary** when mapping UTC `Instant` to localized `ZonedDateTime` in response DTOs.
-  * *Jackson Fix*: By default, Spring Boot's Jackson normalizes all `ZonedDateTime` responses back to UTC. I disabled this (`write-dates-with-context-time-zone: false` in `application.yaml`) so the parent actually sees the timezone offset (like `+05:30`) on their screen.
-
----
-
-## Why It Holds Up Under Load
-
-* **Quick Checks**: To see if a parent is double-booked, the code avoids heavy joins and looks at a single table:
 ```sql
 SELECT 1 FROM booking_session_lock
 WHERE parent_id = :parentId
@@ -37,31 +12,38 @@ WHERE parent_id = :parentId
 
 ```
 
+## Schema Layout
 
+* **User Profiles**: Teacher and Parent tables hold a simple timezone string (like Asia/Kolkata). The Java app uses this boundary to shift internal UTC database times into localized views on the screen.
+* **Course vs Offering**: Course is just a static template (Math 101) with no concept of time or staff. Offering is the live cohort that binds a course to a teacher and manages seat inventory limits (max_students, current_enrollment).
+* **Sessions & Bookings**: Sessions are the literal calendar slots stored as TIMESTAMPTZ so Postgres forces UTC internally. Bookings act as the final transaction ledger.
 
-* **Double Clicks**: I put a unique constraint on `BOOKING(parent_id, offering_id)`. This stops a parent from accidentally buying the exact same class twice if they spam the submit button.
-* **Scope**: I only checked for parent schedule conflicts and class capacity limits here. Checking if a teacher is double-booked across different classes is left out to keep the project clean and focused.
+## Concurrency and Timezones
 
----
+I explicitly chose Pessimistic Locking (FOR UPDATE) over Optimistic version tracking for seat allocations because the user experience is significantly better when a hot class drops.
 
-## Clean Code & Clean APIs
+With optimistic locking, if 50 parents click the last seat at once, everyone gets to fill out the form, but 48 will hit a brutal database failure at the final checkout click. They have to refresh and do it all over again for a class that is already full. Pessimistic locking creates an orderly line the millisecond checkout starts. The winners get the spots, and the other 48 inbound requests wait a split second and immediately see a clean "Class is Full" error without wasting time filling out forms.
 
-* **Swagger Clutter & Package Separation**: OpenAPI/Swagger docs make controller classes super messy and hard to read. To fix this, I put all Swagger and Spring MVC mapping annotations inside separate Java interfaces (like `TeacherApi`) in their own package (`com.undoschool.booking.api`). The actual controllers (in `com.undoschool.booking.controller`) just implement those interfaces. This keeps the controllers 100% clean and keeps the packages neatly organized.
-* **Concrete Service Classes**: I chose not to use redundant interfaces (like `BookingService` -> `BookingServiceImpl`) for my service layer. Since there is only ever one implementation for these services, modern Spring Boot (using CGLIB class-based proxying) handles them perfectly without interfaces. This keeps the codebase lean and avoids the friction of updating two files for every signature change.
-* **Manual Static Mappers**: I built simple, manual mapper utility classes with static methods (e.g., `CourseMapper`) to handle entity-to-DTO conversions. This isolates data translation from business logic, compiles instantly, and avoids adding compiler-level libraries like MapStruct or reflection-heavy runtimes like ModelMapper.
-* **Zero DTO Boilerplate**: I used native Java 21 `record` classes for all request and response DTOs. They are immutable, thread-safe, and get rid of Lombok getter/setter clutter entirely.
-* **Standard RFC Errors**: Instead of writing a custom wrapper class for error responses, I went with Spring Boot 3's native `ProblemDetail` (RFC 7807) inside the global exception handler. It formats all validation and business errors in a standard web format out of the box.
+For timezones, nothing local touches the database. It stays 100% UTC. Shifting happens only at the API boundary when mapping Instant to ZonedDateTime. Spring Boot's Jackson mapper normally forces everything back to UTC strings, so I disabled that by setting write-dates-with-context-time-zone to false in application.yaml so the client actually receives the proper timezone offset (like +05:30).
 
----
+## Code Structure Choices
 
-## ID Generation
+* **OpenAPI Decoupling**: Swagger annotations make controllers incredibly messy. I moved all routing paths, query parameters, and OpenAPI definitions into separate Java interfaces (like TeacherApi) in a dedicated package. The actual controllers just implement those interfaces, keeping the core code clean and readable.
+* **No Redundant Interfaces**: I didn't write useless interface pairs for my service layer (like BookingService to BookingServiceImpl). There is only one execution strategy here, and modern Spring Boot handles concrete classes seamlessly via CGLIB proxies. It removes the friction of updating two files for every single signature change.
+* **Static Mappers**: I used simple utility classes with static methods (CourseMapper) for DTO conversions. It keeps mapping logic separate from business rules, compiles instantly, and avoids heavy runtime reflection or annotations from tools like MapStruct.
+* **Java 21 Records**: All request and response DTOs use native records. They are immutable, thread-safe, and completely replace Lombok boilerplate.
+* **Standard Errors**: I used Spring Boot 3's native ProblemDetail (RFC 7807) inside the global exception handler instead of a custom error wrapper. It projects validation errors in a standard web format out of the box.
 
-I chose **service-layer UUID generation** (`UUID.randomUUID()` in mappers/services) as the primary approach.
+## ID Allocation
 
-Why this is better for this project:
-* The app knows the booking ID immediately, so it can create `booking_session_lock` rows in the same flow without waiting on DB-generated IDs.
-* It keeps the booking transaction simple and predictable under concurrency.
-* It matches the service-first design we already use.
+I use application-driven UUID.randomUUID() in the service layer as the main strategy. It lets the app know the booking ID immediately so it can build and write the dependent booking_session_lock rows in the exact same database flow without waiting for a database return. The schema still retains a database fallback (DEFAULT gen_random_uuid()) so manual SQL inputs remain safe, and a hard UNIQUE(parent_id, session_id) constraint protects the lock table from race conditions.
 
-I also added a **database fallback** (`DEFAULT gen_random_uuid()`) so manual SQL inserts are safe too.
-For race-safety, the database also enforces `UNIQUE(parent_id, session_id)` in `booking_session_lock` to prevent duplicate lock rows under concurrency.
+## Retry-Safe Idempotency
+
+If a network drop happens right after a parent pays, the client app retries. Without an idempotency layer, this double-books them or throws a messy constraint error.
+
+I built a custom @Idempotent annotation backed by an AOP aspect (IdempotencyAspect) and an idempotent_request database table.
+
+First, the aspect tries to write the incoming key to the database as PENDING using an isolated transaction (REQUIRES_NEW). If a parent spams the submit button, the second thread hits a unique key violation, stops right there, and returns a 409 Conflict. If the core service completes successfully, the aspect updates the row status to SUCCESS and caches the serialized JSON response. Subsequent retries with that key completely bypass the service logic and return the cached payload instantly. If the service throws a regular business exception, the aspect purges the key so the user can safely fix their input and retry.
+
+To keep the database lean, a lightweight background cron job runs every hour to drop tracking keys older than 24 hours. I used PostgreSQL instead of Redis here to avoid adding extra infrastructure overhead and to guarantee persistent durability.
