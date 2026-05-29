@@ -52,7 +52,7 @@ public class ParentController implements ParentApi {
     }
 
     @Override
-    public ResponseEntity<BookingResponse> bookOffering(UUID parentId, BookingRequest request) {
+    public ResponseEntity<BookingResponse> bookOffering(String idempotencyKey, UUID parentId, BookingRequest request) {
         BookingResponse response = bookingService.bookOffering(parentId, request);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }

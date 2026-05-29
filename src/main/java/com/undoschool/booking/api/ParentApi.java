@@ -1,5 +1,6 @@
 package com.undoschool.booking.api;
 
+import com.undoschool.booking.annotation.Idempotent;
 import com.undoschool.booking.dto.request.BookingRequest;
 import com.undoschool.booking.dto.request.CreateParentRequest;
 import com.undoschool.booking.dto.response.BookingResponse;
@@ -114,12 +115,15 @@ public interface ParentApi {
         description = "Offering is full or schedule conflict locking detected",
         content = @Content(schema = @Schema(implementation = ProblemDetail.class))
     )
+    @Idempotent
     @PostMapping(
         value = "/api/parents/{parentId}/bookings",
         consumes = MediaType.APPLICATION_JSON_VALUE,
         produces = MediaType.APPLICATION_JSON_VALUE
     )
     ResponseEntity<BookingResponse> bookOffering(
+        @Parameter(description = "Optional client-generated key to ensure request idempotency", required = false)
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         @Parameter(description = "ID of the parent booking the class", required = true)
         @PathVariable("parentId") UUID parentId,
         @Valid @RequestBody BookingRequest request
