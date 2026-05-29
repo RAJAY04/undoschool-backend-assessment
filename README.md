@@ -1,6 +1,15 @@
 # Global Class Offering Booking System
 
-A production-ready Spring Boot backend service for a global live-learning platform where teachers conduct online classes for students across different countries and timezones. 
+A production-ready Spring Boot backend service for a global live-learning platform where teachers conduct online classes for students across different countries and timezones.
+
+### 🌐 Live Deployment
+The application is deployed live on Render backed by a serverless **Neon PostgreSQL** database:
+* **Base URL**: [https://booking-service-latest-400c.onrender.com](https://booking-service-latest-400c.onrender.com)
+* **Swagger UI**: [https://booking-service-latest-400c.onrender.com/swagger-ui.html](https://booking-service-latest-400c.onrender.com/swagger-ui.html)
+* **OpenAPI Docs**: [https://booking-service-latest-400c.onrender.com/api-docs](https://booking-service-latest-400c.onrender.com/api-docs)
+
+> [!WARNING]
+> **Cold Start Notice**: Because the service is hosted on Render's Free tier and backed by Neon's serverless DB, both the web server and database compute instances spin down after inactivity. The first API request or Swagger UI load can take **50–90 seconds** to wake up. Subsequent requests will be near-instantaneous.
 
 ---
 
@@ -156,11 +165,12 @@ sequenceDiagram
 ### 2. Idempotency State Machine
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING : Client sends request with new Idempotency-Key
-    PENDING --> SUCCESS : Service completes successfully (caches response)
-    PENDING --> [*] : Service throws business/validation exception (deletes key)
-    SUCCESS --> SUCCESS : Client retries with same key (returns cached response)
+    [*] --> PENDING : New key received
+    PENDING --> SUCCESS : Request succeeds\n(Cache response)
+    PENDING --> [*] : Request fails\n(Delete key)
+    SUCCESS --> SUCCESS : Key retried\n(Return cached response)
 ```
+
 
 ---
 
@@ -198,6 +208,29 @@ To prevent double-bookings or duplicates due to network retry loops, we support 
 * If a concurrent request with the same key arrives, a database constraint exception is caught, returning a `409 Conflict` (request in progress).
 * On success, the response status and serialized JSON body are cached. Future retries with the same key are returned directly from the cache without hitting the database/application logic.
 * An hourly scheduler clears key mappings older than 24 hours to keep the database lean.
+
+---
+
+## 🚀 CI/CD & Auto-Deployment Flow
+
+The project is configured with a fully automated build and deployment pipeline:
+
+```mermaid
+graph LR
+    Push[Push to main] --> GHA[GitHub Actions]
+    GHA --> Build[Multi-Stage Docker Build]
+    Build --> DH[Push to Docker Hub]
+    DH --> Webhook[Docker Hub Webhook]
+    Webhook --> Render[Render Deploy Hook]
+    Render --> Deploy[Redeploy Live App]
+```
+
+1. **Continuous Integration (GitHub Actions)**:
+   * On every push to the `main` branch, the GitHub Actions workflow at `.github/workflows/build-deploy.yml` triggers.
+   * It compiles the code and builds the multi-stage Docker container before pushing it to Docker Hub.
+2. **Continuous Deployment (Docker Hub Webhook to Render)**:
+   * Rather than embedding deploy tokens inside GitHub secrets, a deployment webhook from Render is configured directly inside the **Docker Hub repository settings**.
+   * The second Docker Hub receives the updated image, it automatically triggers Render to pull the latest tag and redeploy the live service without manual intervention.
 
 ---
 

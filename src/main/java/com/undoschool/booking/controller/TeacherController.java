@@ -1,5 +1,6 @@
 package com.undoschool.booking.controller;
 
+import com.undoschool.booking.annotation.Idempotent;
 import com.undoschool.booking.api.TeacherApi;
 import com.undoschool.booking.dto.request.AddSessionsRequest;
 import com.undoschool.booking.dto.request.CreateOfferingRequest;
@@ -48,6 +49,7 @@ public class TeacherController implements TeacherApi {
     }
 
     @Override
+    @Idempotent
     public ResponseEntity<OfferingResponse> addSessions(String idempotencyKey, UUID offeringId, AddSessionsRequest request) {
         OfferingResponse response = offeringService.addSessions(offeringId, request);
         return ResponseEntity.ok(response);

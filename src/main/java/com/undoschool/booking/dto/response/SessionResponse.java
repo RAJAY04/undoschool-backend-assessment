@@ -8,5 +8,7 @@ public record SessionResponse(
     UUID offeringId,
     UUID teacherId,
     ZonedDateTime startTime,
-    ZonedDateTime endTime
+    ZonedDateTime endTime,
+    String formattedStartTime,
+    String formattedEndTime
 ) {}

@@ -47,3 +47,8 @@ I built a custom @Idempotent annotation backed by an AOP aspect (IdempotencyAspe
 First, the aspect tries to write the incoming key to the database as PENDING using an isolated transaction (REQUIRES_NEW). If a parent spams the submit button, the second thread hits a unique key violation, stops right there, and returns a 409 Conflict. If the core service completes successfully, the aspect updates the row status to SUCCESS and caches the serialized JSON response. Subsequent retries with that key completely bypass the service logic and return the cached payload instantly. If the service throws a regular business exception, the aspect purges the key so the user can safely fix their input and retry.
 
 To keep the database lean, a lightweight background cron job runs every hour to drop tracking keys older than 24 hours. I used PostgreSQL instead of Redis here to avoid adding extra infrastructure overhead and to guarantee persistent durability.
+
+### Placement of @Idempotent on Implementation Classes (CGLIB Proxying Gotcha)
+We explicitly place the `@Idempotent` annotation on the concrete controller classes (e.g. `ParentController`) rather than their OpenAPI interfaces (e.g. `ParentApi`). 
+
+Under Spring Boot's default CGLIB class-based proxying, Spring AOP pointcuts (using `@annotation`) inspect the concrete target class methods at runtime. Because Java does not inherit annotations from interface methods onto implementing class methods, putting the annotation only on the interface would cause Spring AOP to silently bypass the aspect, failing to enforce idempotency. Placing it on the concrete class ensures it is intercepted correctly.

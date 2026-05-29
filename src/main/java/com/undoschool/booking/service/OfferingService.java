@@ -66,10 +66,10 @@ public class OfferingService {
             newSessions.add(session);
         }
 
-        sessionRepository.saveAll(newSessions);
+        List<Session> savedSessions = sessionRepository.saveAll(newSessions);
 
         // Update offering entity sessions list to return in response
-        offering.getSessions().addAll(newSessions);
+        offering.getSessions().addAll(savedSessions);
 
         ZoneId teacherZoneId = ZoneId.of(offering.getTeacher().getTimezone());
         return OfferingMapper.toResponse(offering, teacherZoneId);
